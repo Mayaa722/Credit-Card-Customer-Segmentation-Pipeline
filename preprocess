@@ -1,0 +1,33 @@
+import sys
+import pandas as pd
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+
+file_path = sys.argv[1]
+df = pd.read_csv(file_path)
+
+# 1. Data Cleaning
+df = df.drop_duplicates()
+df = df.fillna(df.mean(numeric_only=True))
+
+# 2. Feature Transformation
+df = pd.get_dummies(df, drop_first=True)
+
+scaler = StandardScaler()
+df[df.columns] = scaler.fit_transform(df[df.columns])
+
+# 3. Dimensionality Reduction
+pca = PCA(n_components=5)
+df_pca = pca.fit_transform(df)
+
+df = pd.DataFrame(df_pca)
+
+# 4. Discretization
+df['bin'] = pd.cut(df[0], bins=3, labels=[0,1,2])
+
+df.to_csv("data_preprocessed.csv", index=False)
+
+print("Preprocessing done")
+
+import os
+os.system("python analytics.py data_preprocessed.csv")
