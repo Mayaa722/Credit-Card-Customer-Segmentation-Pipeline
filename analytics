@@ -1,0 +1,22 @@
+import sys
+import pandas as pd
+
+file_path = sys.argv[1]
+df = pd.read_csv(file_path)
+
+# Insight 1
+insight1 = f"Dataset has {df.shape[0]} rows and {df.shape[1]} columns"
+open("insight1.txt", "w").write(insight1)
+
+# Insight 2
+insight2 = f"Average of first column: {df.iloc[:,0].mean()}"
+open("insight2.txt", "w").write(insight2)
+
+# Insight 3
+insight3 = f"Max value in dataset: {df.max().max()}"
+open("insight3.txt", "w").write(insight3)
+
+print("Insights generated")
+
+import os
+os.system("python visualize.py data_preprocessed.csv")
