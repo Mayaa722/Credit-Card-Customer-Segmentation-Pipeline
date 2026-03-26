@@ -1,0 +1,26 @@
+import sys
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+file_path = sys.argv[1]
+df = pd.read_csv(file_path)
+
+plt.figure(figsize=(10,8))
+
+# 1 Histogram
+df.iloc[:,0].hist()
+
+# 2 Heatmap
+plt.figure()
+sns.heatmap(df.corr())
+
+# 3 Pairplot
+sns.pairplot(df.iloc[:, :3])
+
+plt.savefig("summary_plot.png")
+
+print("Plots created")
+
+import os
+os.system("python cluster.py data_preprocessed.csv")
