@@ -1,0 +1,8 @@
+#!/bin/bash
+
+docker cp container_id:/app/pipeline/*.csv ./results/
+docker cp container_id:/app/pipeline/*.txt ./results/
+docker cp container_id:/app/pipeline/*.png ./results/
+
+docker stop container_id
+docker rm container_id
