@@ -1,13 +1,54 @@
-import sys
-import pandas as pd
+#!/bin/bash
 
-file_path = sys.argv[1]
+# ============================================================
+# summary.sh
+# Copies all generated outputs from the container to the host
+# Then stops and removes the running container
+# ============================================================
 
-df = pd.read_csv("C:\Users\dell\customer-analytics\data\dataset.csv")
+CONTAINER_NAME="credit-analytics"
+HOST_OUTPUT_DIR="customer-analytics/results"
 
-df.to_csv("data_raw.csv", index=False)
+echo "============================================================"
+echo " Credit Card Customer Segmentation — Pipeline Summary"
+echo "============================================================"
 
-print("Data ingested successfully")
+# Step 1: Create results directory on host if it doesn't exist
+echo "[summary.sh] Creating host output directory: $HOST_OUTPUT_DIR"
+mkdir -p "$HOST_OUTPUT_DIR"
 
-import os
-os.system("python preprocess.py data_raw.csv")
+# Step 2: Copy all CSV files
+echo "[summary.sh] Copying CSV files..."
+docker cp "$CONTAINER_NAME":/app/pipeline/data_raw.csv "$HOST_OUTPUT_DIR/"
+docker cp "$CONTAINER_NAME":/app/pipeline/data_preprocessed.csv "$HOST_OUTPUT_DIR/"
+docker cp "$CONTAINER_NAME":/app/pipeline/data_clustered.csv "$HOST_OUTPUT_DIR/"
+
+# Step 3: Copy all TXT files
+echo "[summary.sh] Copying TXT files..."
+docker cp "$CONTAINER_NAME":/app/pipeline/insight1.txt "$HOST_OUTPUT_DIR/"
+docker cp "$CONTAINER_NAME":/app/pipeline/insight2.txt "$HOST_OUTPUT_DIR/"
+docker cp "$CONTAINER_NAME":/app/pipeline/insight3.txt "$HOST_OUTPUT_DIR/"
+docker cp "$CONTAINER_NAME":/app/pipeline/clusters.txt "$HOST_OUTPUT_DIR/"
+
+# Step 4: Copy all PNG files
+echo "[summary.sh] Copying PNG files..."
+docker cp "$CONTAINER_NAME":/app/pipeline/summary_plot.png "$HOST_OUTPUT_DIR/"
+docker cp "$CONTAINER_NAME":/app/pipeline/elbow_plot.png "$HOST_OUTPUT_DIR/"
+
+# Step 5: List copied files
+echo ""
+echo "[summary.sh] Files copied to $HOST_OUTPUT_DIR:"
+ls -lh "$HOST_OUTPUT_DIR"
+
+# Step 6: Stop and remove the container
+echo ""
+echo "[summary.sh] Stopping container: $CONTAINER_NAME"
+docker stop "$CONTAINER_NAME"
+
+echo "[summary.sh] Removing container: $CONTAINER_NAME"
+docker rm "$CONTAINER_NAME"
+
+echo ""
+echo "============================================================"
+echo " Done! All outputs saved to: $HOST_OUTPUT_DIR"
+echo "============================================================"
