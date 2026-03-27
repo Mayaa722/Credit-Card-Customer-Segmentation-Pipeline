@@ -1,16 +1,72 @@
 import sys
 import pandas as pd
 from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
-file_path = sys.argv[1]
-df = pd.read_csv(file_path)
+if len(sys.argv) < 2:
+    print("Usage: python cluster.py <path_to_csv>")
+    sys.exit(1)
 
-kmeans = KMeans(n_clusters=3, random_state=42)
-df['cluster'] = kmeans.fit_predict(df)
+input_path = sys.argv[1]
+print(f"[cluster.py] Loading data from: {input_path}")
+df = pd.read_csv(input_path)
 
-counts = df['cluster'].value_counts()
+# PCA components for clustering ------------------------------------------------------------------------------------------
+pca_cols = [f"PC{i+1}" for i in range(6)]  # Fixed: match preprocess.py
+X = df[pca_cols].values
+print(f"[cluster.py] Using {len(pca_cols)} PCA components for clustering.")
+
+# ELBOW METHOD — Find optimal K -----------------------------------------------------------------------------------------
+wcss = []
+k_range = range(2, 11)
+for k in k_range:
+    kmeans = KMeans(n_clusters=k, init="k-means++", n_init=10, random_state=42)
+    kmeans.fit(X)
+    wcss.append(kmeans.inertia_)
+    print(f"  K={k} → WCSS: {kmeans.inertia_:.2f}")
+
+# Plot elbow curve
+plt.figure(figsize=(8, 5))
+plt.plot(k_range, wcss, marker="o", color="#4C72B0", linewidth=2, markersize=8)
+plt.title("Elbow Method — Optimal Number of Clusters", fontsize=13, fontweight="bold")
+plt.xlabel("Number of Clusters (K)", fontsize=11)
+plt.ylabel("WCSS (Within-Cluster Sum of Squares)", fontsize=11)
+plt.xticks(k_range)
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.savefig("elbow_plot.png", dpi=150, bbox_inches="tight")
+plt.close()
+print("[cluster.py] Elbow plot saved as elbow_plot.png")
+
+# APPLY K-MEANS with K=4 ------------------------------------------------------------------------------------------
+optimal_k = 4
+print(f"\n[cluster.py] Applying K-Means with K={optimal_k}...")
+
+kmeans = KMeans(n_clusters=optimal_k, init="k-means++", n_init=10, random_state=42)
+df["Cluster"] = kmeans.fit_predict(X)
+
+# Silhouette score
+sil_score = silhouette_score(X, df["Cluster"])
+print(f"[cluster.py] Silhouette Score: {sil_score:.4f}")
+
+# Cluster sizes ------------------------------------------------------------------------------------------
+
+cluster_counts = df["Cluster"].value_counts().sort_index()
+
+#  Write clusters.txt ------------------------------------------------------------------------------------------
+output_lines = []
+output_lines.append("K-MEANS CLUSTERING RESULTS")
+output_lines.append("Number of samples per cluster:")
+
+for cluster_id, count in cluster_counts.items():
+    pct = count / len(df) * 100
+    output_lines.append(f"  Cluster {cluster_id}: {count:,} customers ({pct:.1f}%)")
 
 with open("clusters.txt", "w") as f:
-    f.write(str(counts))
+    f.write("\n".join(output_lines))
 
-print("Clustering done")
+print("\n" + "\n".join(output_lines))
+print("[cluster.py] clusters.txt saved successfully!")
