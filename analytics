@@ -1,22 +1,131 @@
 import sys
 import pandas as pd
+import numpy as np
+import subprocess
 
-file_path = sys.argv[1]
-df = pd.read_csv(file_path)
+# ── Load preprocessed data ────────────────────────────────────────────────────
+if len(sys.argv) < 2:
+    print("Usage: python analytics.py <path_to_csv>")
+    sys.exit(1)
 
-# Insight 1
-insight1 = f"Dataset has {df.shape[0]} rows and {df.shape[1]} columns"
-open("insight1.txt", "w").write(insight1)
+input_path = sys.argv[1]
+print(f"[analytics.py] Loading data from: {input_path}")
+df = pd.read_csv(input_path)
 
-# Insight 2
-insight2 = f"Average of first column: {df.iloc[:,0].mean()}"
-open("insight2.txt", "w").write(insight2)
+# Also load raw data for meaningful insights
+raw_df = pd.read_csv("data_raw.csv")
+raw_df.drop(columns=["CUST_ID"], inplace=True)
+raw_df["MINIMUM_PAYMENTS"] = raw_df["MINIMUM_PAYMENTS"].fillna(raw_df["MINIMUM_PAYMENTS"].median())
+raw_df["CREDIT_LIMIT"] = raw_df["CREDIT_LIMIT"].fillna(raw_df["CREDIT_LIMIT"].median())
 
-# Insight 3
-insight3 = f"Max value in dataset: {df.max().max()}"
-open("insight3.txt", "w").write(insight3)
+print(f"[analytics.py] Generating insights...\n")
 
-print("Insights generated")
+# ═══════════════════════════════════════════════════════════════════
+# INSIGHT 1 — Full Payment Behavior
+# ═══════════════════════════════════════════════════════════════════
+full_payers_pct = (raw_df["PRC_FULL_PAYMENT"] == 1.0).sum() / len(raw_df) * 100
+avg_full_payment = raw_df["PRC_FULL_PAYMENT"].mean() * 100
+high_risk = (raw_df["PRC_FULL_PAYMENT"] == 0).sum() / len(raw_df) * 100
 
-import os
-os.system("python visualize.py data_preprocessed.csv")
+insight1 = f"""
+============================================================
+INSIGHT 1: Customer Full Payment Behavior Analysis
+============================================================
+
+Out of {len(raw_df):,} credit card customers:
+
+- Only {full_payers_pct:.2f}% of customers pay their FULL balance every month.
+- On average, customers pay only {avg_full_payment:.2f}% of their balance in full.
+- A concerning {high_risk:.2f}% of customers NEVER pay their full balance.
+
+Business Implication:
+The majority of customers carry a revolving balance, meaning the bank
+earns significant interest revenue. However, the {high_risk:.2f}% who never
+pay in full represent a potential default risk and should be flagged
+for proactive financial counseling or credit limit review.
+============================================================
+"""
+
+with open("insight1.txt", "w") as f:
+    f.write(insight1)
+print("[analytics.py] insight1.txt saved.")
+print(insight1)
+
+# ═══════════════════════════════════════════════════════════════════
+# INSIGHT 2 — Cash Advance vs Purchases Behavior
+# ═══════════════════════════════════════════════════════════════════
+cash_users = (raw_df["CASH_ADVANCE"] > 0).sum()
+cash_pct = cash_users / len(raw_df) * 100
+avg_cash = raw_df[raw_df["CASH_ADVANCE"] > 0]["CASH_ADVANCE"].mean()
+avg_purchases = raw_df["PURCHASES"].mean()
+cash_vs_purchase_ratio = avg_cash / avg_purchases if avg_purchases > 0 else 0
+
+insight2 = f"""
+============================================================
+INSIGHT 2: Cash Advance vs Purchases Behavior
+============================================================
+
+- {cash_pct:.2f}% of customers ({cash_users:,} users) have used Cash Advance.
+- Average Cash Advance amount (among users who used it): ${avg_cash:,.2f}
+- Average Purchase amount across all customers:          ${avg_purchases:,.2f}
+- Cash Advance to Purchases ratio: {cash_vs_purchase_ratio:.2f}x
+
+Business Implication:
+Customers who rely heavily on cash advance typically face higher fees
+and interest rates. The {cash_pct:.2f}% who use cash advance represent
+a segment that may be under financial stress. The bank should consider
+offering them tailored financial products such as personal loans at
+lower interest rates to reduce default risk and improve loyalty.
+============================================================
+"""
+
+with open("insight2.txt", "w") as f:
+    f.write(insight2)
+print("[analytics.py] insight2.txt saved.")
+print(insight2)
+
+# ═══════════════════════════════════════════════════════════════════
+# INSIGHT 3 — Tenure & Credit Limit Relationship
+# ═══════════════════════════════════════════════════════════════════
+tenure_groups = raw_df.groupby("TENURE")["CREDIT_LIMIT"].mean().reset_index()
+max_tenure_group = tenure_groups.loc[tenure_groups["CREDIT_LIMIT"].idxmax()]
+min_tenure_group = tenure_groups.loc[tenure_groups["CREDIT_LIMIT"].idxmin()]
+long_term = raw_df[raw_df["TENURE"] == 12]["CREDIT_LIMIT"].mean()
+short_term_df = raw_df[raw_df["TENURE"] <= 6]["CREDIT_LIMIT"]
+short_term = short_term_df.mean() if len(short_term_df) > 0 else raw_df["CREDIT_LIMIT"].min()
+diff_pct = ((long_term - short_term) / short_term * 100) if short_term > 0 else 0
+
+insight3 = f"""
+============================================================
+INSIGHT 3: Customer Tenure vs Credit Limit Analysis
+============================================================
+
+- Customers with TENURE = {int(max_tenure_group['TENURE'])} months have the highest
+  average credit limit: ${max_tenure_group['CREDIT_LIMIT']:,.2f}
+
+- Customers with TENURE = {int(min_tenure_group['TENURE'])} months have the lowest
+  average credit limit: ${min_tenure_group['CREDIT_LIMIT']:,.2f}
+
+- Long-term customers (12 months) avg credit limit:  ${long_term:,.2f}
+- Short-term customers (<=6 months) avg credit limit: ${short_term:,.2f}
+- Long-term customers have {diff_pct:.1f}% HIGHER credit limits than short-term.
+
+Business Implication:
+There is a clear positive relationship between customer tenure and
+credit limit. Long-term customers are rewarded with higher credit
+limits, reflecting their established trust and payment history.
+This insight supports a loyalty-based credit limit increase program
+to incentivize customers to remain active longer.
+============================================================
+"""
+
+with open("insight3.txt", "w") as f:
+    f.write(insight3)
+print("[analytics.py] insight3.txt saved.")
+print(insight3)
+
+print("[analytics.py] All 3 insights generated and saved successfully!")
+
+# ── Call next script: visualize.py ───────────────────────────────────────────
+print("\n[analytics.py] Calling visualize.py...\n")
+subprocess.run(["python", "visualize.py", input_path], check=True)
