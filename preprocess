@@ -1,33 +1,199 @@
 import sys
+import seaborn as sns
+import matplotlib.pyplot as plt
 import pandas as pd
+import numpy as np
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
+import subprocess
 
-file_path = sys.argv[1]
-df = pd.read_csv(file_path)
+input_path = 'data_raw.csv'
+print(f"[preprocess.py] Loading data from: {input_path}")
 
-# 1. Data Cleaning
-df = df.drop_duplicates()
-df = df.fillna(df.mean(numeric_only=True))
+if input_path.endswith(".xlsx") or input_path.endswith(".xls"):
+    df = pd.read_excel(input_path)
+else:
+    df = pd.read_csv(input_path)
+print(f"[preprocess.py] Shape before preprocessing: {df.shape}")
 
-# 2. Feature Transformation
-df = pd.get_dummies(df, drop_first=True)
+#  Data Cleaning
+print("STAGE 1: Data Cleaning")
+
+# Drop ID column
+df.drop(columns=["CUST_ID"], inplace=True)
+print("Dropped CUST_ID")
+
+'''''
+# Fix data types
+for col in df.columns:
+    df[col] = pd.to_numeric(df[col], errors='coerce')
+
+print("Fixed data types")
+'''
+# Missing values
+missing_before = df.isnull().sum().sum()
+print("Missing before:", missing_before)
+
+df["MINIMUM_PAYMENTS"] = df["MINIMUM_PAYMENTS"].fillna(df["MINIMUM_PAYMENTS"].median())
+df["CREDIT_LIMIT"] = df["CREDIT_LIMIT"].fillna(df["CREDIT_LIMIT"].median())
+
+missing_after = df.isnull().sum().sum()
+print("Missing after:", missing_after)
+
+print("Shape after cleaning:", df.shape)
+
+# Remove duplicates
+duplicates = df.duplicated().sum()
+print("Duplicate rows:", duplicates)
+if duplicates > 0:
+    df.drop_duplicates(inplace=True)
+    print("Removed duplicate rows")
+else:
+    print("No duplicate rows found")
+
+#  Feature Transformation 
+print("STAGE 2: Feature Transformation")
+
+# Task 1: Create ratio features
+# Ratio of one-off purchases to total purchases
+if 'ONEOFF_PURCHASES' in df.columns and 'PURCHASES' in df.columns:
+    df['ONEOFF_RATIO'] = df['ONEOFF_PURCHASES'] / (df['PURCHASES'] + 1)
+    print("Created ONEOFF_RATIO")
+
+# Ratio of payments to balance
+if 'PAYMENTS' in df.columns and 'BALANCE' in df.columns:
+    df['PAYMENT_BALANCE_RATIO'] = df['PAYMENTS'] / (df['BALANCE'] + 1)
+    print(" Created PAYMENT_BALANCE_RATIO")
+
+# Task 2: Cap outliers
+print("\nCapping outliers at 99th percentile...")
+
+for col in ['PURCHASES', 'CASH_ADVANCE', 'PAYMENTS']:
+    if col in df.columns:
+        cap = df[col].quantile(0.99)
+        df[col] = df[col].clip(upper=cap)
+        print(f"  - Capped {col} at {cap:.2f}")
+
+# Task 3: Square root transformation for skewed columns
+print("\nTask 3: square root transformation")
+
+for col in df.select_dtypes(include=[np.number]).columns:
+    if df[col].skew() > 2:
+        df[f'{col}_SQRT'] = np.sqrt(df[col] + 1)
+        print(f"  - Created {col}_SQRT")       
+        
+
+
+# final check for any remaining NaN
+if df.isnull().any().any():
+    print(" NaN still present. Filling with 0")
+    df = df.fillna(0)
+
+
+#  Scaling
+print("STAGE 3: Scaling ")
+
+numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
 
 scaler = StandardScaler()
-df[df.columns] = scaler.fit_transform(df[df.columns])
+df_scaled = pd.DataFrame(
+    scaler.fit_transform(df[numeric_cols]),
+    columns=numeric_cols
+)
 
-# 3. Dimensionality Reduction
-pca = PCA(n_components=5)
-df_pca = pca.fit_transform(df)
+print(f"Scaled {len(numeric_cols)} numeric columns")
 
-df = pd.DataFrame(df_pca)
+# Correlation Analysis
+print(" STAGE 4: Correlation Analysis")
 
-# 4. Discretization
-df['bin'] = pd.cut(df[0], bins=3, labels=[0,1,2])
+corr_matrix = df_scaled.corr()
 
-df.to_csv("data_preprocessed.csv", index=False)
+plt.figure(figsize=(12,8))
+sns.heatmap(corr_matrix, cmap="coolwarm", center=0)
+plt.title("Correlation Heatmap")
+plt.savefig("correlation_heatmap.png")
 
-print("Preprocessing done")
+'''
+cols_to_drop = [
+    'ONEOFF_PURCHASES',               # correlated with PURCHASES
+    'INSTALLMENTS_PURCHASES',         # correlated with PURCHASES
+    'ONEOFF_PURCHASES_FREQUENCY',     # correlated with PURCHASES_FREQUENCY
+    'PURCHASES_INSTALLMENTS_FREQUENCY', # correlated with PURCHASES_FREQUENCY
+    'CASH_ADVANCE_TRX',               # correlated with CASH_ADVANCE_FREQUENCY
+    'PURCHASES_TRX',                  # correlated with PURCHASES
+]
 
-import os
-os.system("python analytics.py data_preprocessed.csv")
+df_scaled_full.drop(columns=cols_to_drop, inplace=True, errors='ignore')
+
+print(f"[preprocess.py] Dropped correlated columns: {cols_to_drop}")
+print(f"[preprocess.py] Shape after dimensionality reduction: {df.shape}")
+
+'''
+
+
+# PCA
+print("STAGE 5: PCA ")
+
+pca = PCA(n_components=6)
+X_pca = pca.fit_transform(df_scaled)
+
+df_reduced = pd.DataFrame(
+    X_pca,
+    columns=[f"PC{i+1}" for i in range(6)]
+)
+
+print("Shape after PCA:", df_reduced.shape)
+
+#  Discretization
+print("\n── STAGE 6: Discretization ──")
+
+# TENURE
+df["TENURE_BIN"] = pd.cut(
+    df["TENURE"],
+    bins=[4, 8, 10, 12],
+    labels=["Short-term", "Mid-term", "Long-term"]
+)
+
+# BALANCE
+df["BALANCE_BIN"] = pd.qcut(
+    df["BALANCE"],
+    q=3,
+    labels=["Low", "Medium", "High"]
+)
+
+# CREDIT LIMIT
+df["CREDIT_LIMIT_BIN"] = pd.qcut(
+    df["CREDIT_LIMIT"],
+    q=3,
+    labels=["Bronze", "Silver", "Gold"]
+)
+
+print("Created bins: TENURE_BIN, BALANCE_BIN, CREDIT_LIMIT_BIN")
+
+print("FINAL STAGE")
+
+bin_cols = ["TENURE_BIN", "BALANCE_BIN", "CREDIT_LIMIT_BIN"]
+df_bins = df[bin_cols].astype(str).reset_index(drop=True)
+
+df_final = pd.concat(
+    [df_reduced.reset_index(drop=True), df_bins],
+    axis=1
+)
+
+output_path = "data_preprocessed.csv"
+df_final.to_csv(output_path, index=False)
+
+print("Saved to:", output_path)
+print("Final shape:", df_final.shape)
+
+
+
+
+result = subprocess.run(
+    ["python", "analytics.py", "data_preprocessed.csv"],
+    capture_output=True,
+    text=True
+)
+
+print(result.stdout)
+print(result.stderr)
