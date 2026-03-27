@@ -1,26 +1,58 @@
 import sys
 import pandas as pd
 import matplotlib.pyplot as plt
-import seaborn as sns
+import subprocess
 
-file_path = sys.argv[1]
-df = pd.read_csv(file_path)
+# Load data (same as before)
+if len(sys.argv) < 2:
+    print("Usage: python visualize.py <path_to_csv>")
+    sys.exit(1)
 
-plt.figure(figsize=(10,8))
+input_path = sys.argv[1]
+print(f"[visualize.py] Loading data from: {input_path}")
 
-# 1 Histogram
-df.iloc[:,0].hist()
+raw_df = pd.read_csv("data_raw.csv")
+raw_df.drop(columns=["CUST_ID"], inplace=True)
+raw_df["MINIMUM_PAYMENTS"] = raw_df["MINIMUM_PAYMENTS"].fillna(raw_df["MINIMUM_PAYMENTS"].median())
+raw_df["CREDIT_LIMIT"] = raw_df["CREDIT_LIMIT"].fillna(raw_df["CREDIT_LIMIT"].median())
 
-# 2 Heatmap
-plt.figure()
-sns.heatmap(df.corr())
+print("[visualize.py] Generating 3 plots...")
 
-# 3 Pairplot
-sns.pairplot(df.iloc[:, :3])
+fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+fig.suptitle("Credit Card Customer Analysis", fontsize=14, fontweight="bold")
 
-plt.savefig("summary_plot.png")
+# Plot 1: Balance distribution (histogram)
+axes[0, 0].hist(raw_df["BALANCE"], bins=50, color="steelblue", edgecolor="white")
+axes[0, 0].axvline(raw_df["BALANCE"].mean(), color="red", linestyle="--", label=f"Mean: ${raw_df['BALANCE'].mean():,.0f}")
+axes[0, 0].axvline(raw_df["BALANCE"].median(), color="orange", linestyle="--", label=f"Median: ${raw_df['BALANCE'].median():,.0f}")
+axes[0, 0].set_title("Distribution of Customer Balances")
+axes[0, 0].set_xlabel("Balance (USD)")
+axes[0, 0].set_ylabel("Number of Customers")
+axes[0, 0].legend()
 
-print("Plots created")
+# Plot 2: Purchases vs Credit Limit (scatter)
+axes[0, 1].scatter(raw_df["PURCHASES"], raw_df["CREDIT_LIMIT"], alpha=0.4, s=10, color="steelblue")
+axes[0, 1].set_title("Purchases vs Credit Limit")
+axes[0, 1].set_xlabel("Total Purchases (USD)")
+axes[0, 1].set_ylabel("Credit Limit (USD)")
 
-import os
-os.system("python cluster.py data_preprocessed.csv")
+# Plot 3: Full Payment Behavior (bar plot of proportions)
+full_payment_counts = raw_df["PRC_FULL_PAYMENT"].value_counts().sort_index()
+axes[1, 0].bar(full_payment_counts.index, full_payment_counts.values, color=["tomato", "lightgreen"])
+axes[1, 0].set_title("Full Payment Behavior (0=No, 1=Yes)")
+axes[1, 0].set_xlabel("Paid Full Balance?")
+axes[1, 0].set_ylabel("Number of Customers")
+axes[1, 0].set_xticks([0, 1])
+axes[1, 0].set_xticklabels(["No", "Yes"])
+
+# Hide the unused subplot (bottom-right)
+axes[1, 1].axis("off")
+
+plt.tight_layout(rect=[0, 0, 1, 0.96])
+plt.savefig("summary_plot.png", dpi=150)
+plt.close()
+
+print("[visualize.py] Saved summary_plot.png")
+
+# Call cluster.py
+subprocess.run(["python", "cluster.py", input_path], check=True)
